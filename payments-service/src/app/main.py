@@ -3,6 +3,7 @@ import logging
 from fastapi import FastAPI, HTTPException, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
+from decimal import Decimal
 from app import crud, schemas, workers
 from app.db import engine, Base, get_session
 from app.messaging import init_rabbit, close_rabbit
@@ -57,6 +58,23 @@ async def get_account(
     if not acc:
         raise HTTPException(status_code=404, detail="Account not found")
     return acc
+
+
+@app.post("/accounts/{user_id}/hold", status_code=200)
+async def api_hold(user_id: UUID, req: schemas.HoldRequest, session: AsyncSession = Depends(get_session)):
+    try:
+        await crud.hold_amount(req.order_id, user_id, Decimal(str(req.amount)), session)
+    except crud.InsufficientFunds:
+        raise HTTPException(400, "Insufficient funds")
+    return {"status":"held"}
+
+@app.post("/accounts/{user_id}/release", status_code=200)
+async def api_release(user_id: UUID, req: schemas.ReleaseRequest, session: AsyncSession = Depends(get_session)):
+    try:
+        await crud.release_hold(req.order_id, session)
+    except crud.NoResultFound:
+        raise HTTPException(404, "Hold not found")
+    return {"status":"released"}
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)

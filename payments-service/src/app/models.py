@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, DECIMAL, TIMESTAMP, func
+from sqlalchemy import Column, DateTime, Numeric, String, DECIMAL, TIMESTAMP, func
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
 from app.db import Base
 
@@ -28,3 +28,13 @@ class PaymentsOutbox(Base):
     payload = Column(JSONB, nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     published_at = Column(TIMESTAMP(timezone=True), nullable=True)
+
+class Hold(Base):
+    __tablename__ = "holds"
+
+    order_id   = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id    = Column(PG_UUID(as_uuid=True), nullable=False)
+    amount     = Column(Numeric(18, 2), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    released_at= Column(DateTime(timezone=True), nullable=True)
+    captured_at= Column(DateTime(timezone=True), nullable=True)

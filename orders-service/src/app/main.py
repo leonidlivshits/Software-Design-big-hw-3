@@ -1,8 +1,9 @@
 import asyncio
 import logging
-from fastapi import FastAPI, HTTPException, Depends
+import httpx
+from fastapi import FastAPI, HTTPException, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from uuid import UUID
+from uuid import UUID, uuid4
 from app import crud, schemas, workers
 from app.db import engine, Base, get_session
 from app.messaging import init_rabbit, close_rabbit
@@ -10,6 +11,7 @@ import uvicorn
 
 logger = logging.getLogger(__name__)
 app = FastAPI(title="Orders Service")
+PAYMENTS_BASE = "http://payments-service:8000"
 
 @app.on_event("startup")
 async def startup_event():
@@ -31,48 +33,6 @@ async def shutdown_event():
     await close_rabbit()
 
 
-@app.post("/orders", response_model=schemas.OrderRead)
-async def create_order(
-    order_in: schemas.OrderCreateRequest,
-    user_id: UUID,
-    session: AsyncSession = Depends(get_session)
-):
-    """
-    Создаёт новый заказ. Ожидает JSON бади { "amount": <float>, "description": "<str>" }.
-    
-    Пример:
-    POST /orders?user_id=123e4567-e89b-12d3-a456-426614174000
-    Body: {"amount": 100.50, "description": "Пример заказа"}
-    """
-    try:
-        db_order = schemas.OrderCreate(
-            user_id=str(user_id),
-            amount=order_in.amount,
-            description=order_in.description
-        )
-        
-        new_order = await crud.create_order(db_order, session)
-        return new_order
-    except Exception as e:
-        raise HTTPException(status_code=422, detail=str(e))
-
-# @app.post("/orders/{user_id}", response_model=schemas.OrderRead)
-# async def create_order(
-#     user_id: UUID,
-#     order_in: schemas.OrderCreate,
-#     session: AsyncSession = Depends(get_session)
-# ):
-#     """
-#     Создаёт новый заказ и публикует событие на проверку и списание средств.
-#     Процесс оплаты полностью асинхронный через RabbitMQ.
-#     """
-#     try:
-#         new_order = await crud.create_order(user_id, order_in, session)
-#         return new_order
-#     except Exception as e:
-#         logger.error(f"Error creating order: {e}")
-#         raise HTTPException(status_code=422, detail=str(e))
-
 @app.get("/orders", response_model=list[schemas.OrderRead])
 async def list_orders(
     user_id: UUID,
@@ -90,6 +50,31 @@ async def get_order(
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     return order
+
+
+@app.post("/orders", response_model=schemas.OrderRead)
+async def create_order(
+    order_in: schemas.OrderCreateRequest,
+    user_id: UUID = Query(...),
+    session: AsyncSession = Depends(get_session)
+):
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"{PAYMENTS_BASE}/accounts/{user_id}/hold",
+            json={"order_id": str(uuid_order := uuid4()), "amount": order_in.amount}
+        )
+    if resp.status_code == 400:
+        raise HTTPException(400, "Insufficient funds")
+    resp.raise_for_status()
+    new_order = await crud.create_order(
+        schemas.OrderCreate(order_id=uuid_order,
+                             user_id=user_id,
+                             amount=order_in.amount,
+                             description=order_in.description),
+        session
+    )
+    return new_order
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)

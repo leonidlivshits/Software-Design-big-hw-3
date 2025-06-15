@@ -30,3 +30,10 @@ class PaymentResultEvent(BaseModel):
     amount: float
     result: str
     reason: Optional[str]
+
+class HoldRequest(BaseModel):
+    order_id: UUID
+    amount: float
+
+class ReleaseRequest(BaseModel):
+    order_id: UUID

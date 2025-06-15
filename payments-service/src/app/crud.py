@@ -1,14 +1,16 @@
 from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import UUID, select, func,  update, delete
+from sqlalchemy.exc import IntegrityError, NoResultFound
 from fastapi.encoders import jsonable_encoder
 
-from app.models import Account, PaymentsInbox, PaymentsOutbox
+from app.models import Account, PaymentsInbox, PaymentsOutbox, Account, Hold
 from app.schemas import PaymentRequestEvent
 
 class AccountExistsError(Exception):
-    """Выбрасывается, если аккаунт с таким user_id уже существует."""
+    pass
+
+class InsufficientFunds(Exception):
     pass
 
 async def create_account(
@@ -57,13 +59,6 @@ async def process_payment_event(
     event: PaymentRequestEvent,
     session: AsyncSession
 ) -> None:
-    """
-    1) Записываем событие в inbox (с сериализацией UUID→str).
-    2) Если дубликат — выходим.
-    3) Блокируем account FOR UPDATE, списываем или формируем отказ.
-    4) Записываем результат в outbox.
-    5) Commit.
-    """
     raw = jsonable_encoder(event)
 
     inbox_rec = PaymentsInbox(
@@ -112,7 +107,6 @@ async def process_payment_event(
             }
             event_type = "payment_succeeded"
 
-    # Записываем результат
     outbox_rec = PaymentsOutbox(
         aggregate_id=raw["order_id"],
         event_type=event_type,
@@ -120,4 +114,27 @@ async def process_payment_event(
     )
     session.add(outbox_rec)
 
+    await session.commit()
+
+async def hold_amount(order_id: UUID, user_id: UUID, amount: Decimal, session: AsyncSession):
+    stmt = select(Account).where(Account.user_id==user_id).with_for_update()
+    account = (await session.execute(stmt)).scalar_one_or_none()
+    if not account or account.balance < amount:
+        raise InsufficientFunds()
+    account.balance -= amount
+    session.add(account)
+    session.add(Hold(order_id=order_id, user_id=user_id, amount=amount))
+    await session.commit()
+
+async def release_hold(order_id: UUID, session: AsyncSession):
+    stmt = select(Hold).where(Hold.order_id==order_id, Hold.released_at.is_(None), Hold.captured_at.is_(None)).with_for_update()
+    hold = (await session.execute(stmt)).scalar_one_or_none()
+    if not hold:
+        raise NoResultFound()
+
+    stmt_acc = select(Account).where(Account.user_id==hold.user_id).with_for_update()
+    account = (await session.execute(stmt_acc)).scalar_one()
+    account.balance += hold.amount
+    hold.released_at = func.now()
+    session.add_all([account, hold])
     await session.commit()
