@@ -1,0 +1,130 @@
+services:
+  orders_db:
+    image: postgres:17
+    container_name: orders_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${ORDERS_DB_USER}
+      POSTGRES_PASSWORD: ${ORDERS_DB_PASSWORD}
+      POSTGRES_DB: ${ORDERS_DB_NAME}
+    volumes:
+      - orders_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "localhost", "-p", "5432"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+
+  payments_db:
+    image: postgres:17
+    container_name: payments_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${PAYMENTS_DB_USER}
+      POSTGRES_PASSWORD: ${PAYMENTS_DB_PASSWORD}
+      POSTGRES_DB: ${PAYMENTS_DB_NAME}
+    volumes:
+      - payments_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "localhost", "-p", "5432"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:4.1-management
+    container_name: rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBIT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBIT_PASSWORD}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "sh", "-c", "nc -z rabbitmq 5672"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+
+  orders-service:
+    build:
+      context: ./orders-service
+      dockerfile: Dockerfile
+    container_name: orders_service
+    restart: unless-stopped
+    depends_on:
+      - orders_db
+      - rabbitmq
+    env_file:
+      - ./.env
+    volumes:
+      - ./orders-service/src/.env:/app/src/.env
+      - orders_service_logs:/app/logs
+    environment:
+      ORDERS_DB_USER: ${ORDERS_DB_USER}
+      ORDERS_DB_PASSWORD: ${ORDERS_DB_PASSWORD}
+      ORDERS_DB_NAME: ${ORDERS_DB_NAME}
+      ORDERS_DB_HOST: orders_db
+      ORDERS_DB_PORT: "5432"
+      RABBIT_USER: ${RABBIT_USER}
+      RABBIT_PASSWORD: ${RABBIT_PASSWORD}
+      RABBIT_HOST: rabbitmq
+      RABBIT_PORT: "5672"
+      OUTBOX_POLL_INTERVAL: "5"
+      RESULT_CONSUMER_PREFETCH: "10"
+    ports:
+      - "8001:8000"
+
+  payments-service:
+    build:
+      context: ./payments-service
+      dockerfile: Dockerfile
+    container_name: payments_service
+    restart: unless-stopped
+    depends_on:
+      - payments_db
+      - rabbitmq
+    env_file:
+      - ./.env
+    volumes:
+      - ./payments-service/src/.env:/app/src/.env
+      - payments_service_logs:/app/logs
+    environment:
+      PAYMENTS_DB_USER: ${PAYMENTS_DB_USER}
+      PAYMENTS_DB_PASSWORD: ${PAYMENTS_DB_PASSWORD}
+      PAYMENTS_DB_NAME: ${PAYMENTS_DB_NAME}
+      PAYMENTS_DB_HOST: payments_db
+      PAYMENTS_DB_PORT: "5432"
+      RABBIT_USER: ${RABBIT_USER}
+      RABBIT_PASSWORD: ${RABBIT_PASSWORD}
+      RABBIT_HOST: rabbitmq
+      RABBIT_PORT: "5672"
+      OUTBOX_POLL_INTERVAL: "5"
+      INBOX_PREFETCH_COUNT: "10"
+    ports:
+      - "8002:8000"
+
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: api_gateway
+    restart: unless-stopped
+    depends_on:
+      - orders-service
+      - payments-service
+    env_file:
+      - ./.env
+    ports:
+      - "8000:8000"
+
+volumes:
+  orders_data:
+  payments_data:
+  payments_service_logs:
+  orders_service_logs:
