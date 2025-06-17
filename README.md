@@ -6,7 +6,7 @@
 * **Orders Service** на FastAPI + PostgreSQL + RabbitMQ
 * **Payments Service** на FastAPI + PostgreSQL + RabbitMQ
 
-Система обеспечивает создание и оплату заказов с поддержкой атомарного резервирования средств и асинхронной обработки платежей через шаблон Saga (Transactional Outbox / Inbox).
+Система обеспечивает создание и оплату заказов с поддержкой резервирования средств и асинхронной обработки платежей через шаблон Saga (Transactional Outbox / Inbox).
 
 ---
 
