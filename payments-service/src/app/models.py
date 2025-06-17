@@ -32,9 +32,9 @@ class PaymentsOutbox(Base):
 class Hold(Base):
     __tablename__ = "holds"
 
-    order_id   = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id    = Column(PG_UUID(as_uuid=True), nullable=False)
-    amount     = Column(Numeric(18, 2), nullable=False)
+    order_id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(PG_UUID(as_uuid=True), nullable=False)
+    amount = Column(Numeric(18, 2), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     released_at= Column(DateTime(timezone=True), nullable=True)
     captured_at= Column(DateTime(timezone=True), nullable=True)

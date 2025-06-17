@@ -49,7 +49,7 @@ async def proxy_get_account(user_id: UUID):
 
 @app.post(
     "/orders",
-    description="Создание заказа. user_id — query-параметр, тело: amount и description"
+    description="Создание заказа. user_id - query-параметр, тело: amount и description"
 )
 async def proxy_create_order(
     user_id: UUID = Query(..., description="ID пользователя, делающего заказ"),

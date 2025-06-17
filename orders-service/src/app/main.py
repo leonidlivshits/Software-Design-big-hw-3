@@ -19,7 +19,7 @@ async def startup_event():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    # Rabbit (кролика накормили кобальтом)
+    # RabbitMQ (кролика накормили кобальтом) (это мем из матстата)
     await init_rabbit()
 
     # Воркеры
